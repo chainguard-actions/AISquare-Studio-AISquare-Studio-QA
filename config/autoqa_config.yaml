@@ -1,0 +1,196 @@
+# AISquare AutoQA Configuration
+# Aligned with autoqa-policy.yml
+
+schema: v1
+generated_files_header: "AutoQA-Generated"   # Required header for files AutoQA may edit
+timestamp_format: "ISO8601_TZ"               # All headers/PR bodies must include timezone
+
+# Metadata configuration
+metadata:
+  # Minimal fields expected inside the fenced `autoqa` block in PRs
+  required: ["flow_name", "tier"]
+  optional: ["area"]
+  tier_values: ["A", "B", "C"]
+  defaults:
+    tier: "B"
+    area: "general"
+  validation:
+    flow_name_max_length: 50
+    area_max_length: 30
+    min_steps: 1
+
+# Quotas and limits
+quotas:
+  # Hard caps per repo to prevent test bloat
+  total_curated: 100
+  per_tier:
+    A: 40
+    B: 40
+    C: 20
+
+# Approvals and CODEOWNERS
+approvals:
+  # GitHub branch protection / CODEOWNERS should enforce Rabia as required reviewer
+  required_reviewers:
+    - "TahirRabia"
+  paths:
+    - "tests/autoqa/**"
+
+# Versioning and branching
+versioning:
+  # Update-in-place strategy per flow
+  branch_pattern: "autoqa/{source_pr}-{flow_name}"
+  control_comment_anchor: "AUTOQA_CONTROL"  # AutoQA patches a single PR comment
+  etag:
+    algo: "sha256"      # Full SHA256 hash
+    no_op_on_match: true   # Skip regeneration if ETag unchanged
+
+# Edit policy
+edit_policy:
+  # Create-only by default. Auto-edits allowed only for AutoQA-owned files.
+  allow_auto_edit_only_if_header: true       # File must contain the header string above
+  allow_if_last_author_is_autoqa: true
+  allow_if_label_present: "autoqa:allow-edit"
+  # Major UI change flow
+  version_bump_creates_v2: true              # Generates …_v2.py and links old file
+  human_paths_protected:
+    - "tests/**/human/**"
+
+# Test lifecycle
+lifecycle:
+  # Simple retire/replace controls
+  retire_label: "autoqa:retire"              # When added on the test PR, AutoQA opens a delete PR
+  retire_meta_action: "retire"               # Optional: action: retire inside the autoqa meta
+  replacement_file_suffix: "_v2.py"
+
+# Regression preview strategy
+regression_preview:
+  # Minimal preview: run essentials, then impacted-by-area; only failed flows go to LLM
+  gate_order: ["essentials", "impacted"]
+  impacted_resolution:
+    by_area: true            # Map PR area to tests/autoqa/{tier}/{area}/…
+  llm_context:
+    include: ["test_file", "last_green_commit", "dom_snapshot", "pr_diff"]
+
+# Context and repo access
+context:
+  # Repo access policy for LLM
+  full_repo_available: true                  # Clone/fetch entire repo during CI
+  mcp_future: true                           # Plan to move to GitHub MCP later
+  research:
+    repoindex_cache: false                   # Off for now; gather feedback before enabling
+
+# CI execution settings
+ci:
+  # Execution targets and parallelism
+  pr_time_budget_minutes: 5                  # Manual enforcement by QA owner (Rabia)
+  workers_max: 4
+  required_checks:
+    - "autoqa/security-ast"
+    - "autoqa/run-validation"
+    - "autoqa/policy-guard"
+
+# Stability and retries
+stability:
+  # Keep it simple: 2 CI retries; reasonable waits; screenshots on failure
+  retries_ci: 2
+  waits:
+    action_ms: 5000
+    navigation_ms: 10000
+    test_timeout_ms: 90000
+  screenshots_on: "failures"
+
+# Artifacts
+artifacts:
+  provider: "github"
+  retention_days: 14
+  include:
+    - "report.html"
+    - "screenshots/*"
+    - "dom_snapshot.json"
+
+# Logging
+logging:
+  # Keep logs safe and minimal
+  safe_logging: true
+  avoid_secret_like_values: true
+  redact_patterns:
+    - "password="
+    - "token="
+    - "Bearer "
+    - "@example.com"
+
+# Security
+security:
+  # Use GitHub Secrets for all environment values used by tests
+  secrets_source: "github_actions_secrets"
+  ast_validation: true
+  restricted_imports: true
+  sandbox_execution: true
+  mask_secrets_in_logs: true
+
+# Labels
+labels:
+  allow_edit: "autoqa:allow-edit"
+  retire: "autoqa:retire"
+  frozen: "autoqa:frozen"
+
+# Naming conventions
+naming:
+  # File & class naming conventions
+  path_pattern: "tests/autoqa/{tier}/{area}/test_{flow_name}.py"
+  class_pattern: "Test{FlowCamel}"
+  function_pattern: "test_{flow_name}"
+
+# Action configuration
+autoqa:
+  trigger_tag: "```autoqa"  # Fenced metadata block
+  test_directory: "tests/autoqa"
+  
+  # Execution settings
+  execution:
+    run_full_suite_after_generation: true
+    retry_count: 2
+    timeout_per_test: 300
+    staging_only: true
+    
+    # Active execution mode (NEW)
+    use_active_execution: true  # Enable iterative step-by-step execution
+    active_execution:
+      max_retries_per_step: 2
+      step_timeout_ms: 30000
+      slow_mo_ms: 500  # Slow down browser for observation
+      record_video: false
+      selector_priority:
+        - "data-testid"
+        - "data-test"
+        - "id"
+        - "name"
+        - "aria-label"
+        - "placeholder"
+        - "type"
+        - "class"
+        - "text"
+      failure_mode: "stop_on_error"  # Options: stop_on_error, continue_on_error, partial_commit
+  
+  # Reporting
+  reporting:
+    update_pr_comments: true
+    include_screenshots: true
+    include_execution_logs: true
+    create_github_checks: false
+
+# Cross-repository settings
+cross_repo:
+  action_repository: "AISquare-Studio/AISquare-Studio-QA"
+  action_ref: "main"
+  checkout_path: ".autoqa-action"
+  
+  # Target repository settings
+  target:
+    test_directory: "tests/autoqa"
+    
+    commit_settings:
+      author_name: "AutoQA Bot"
+      author_email: "rabia.tahirr@opengrowth.com"
+      branch_protection: true  # Never commit to main/master

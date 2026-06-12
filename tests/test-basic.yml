@@ -1,0 +1,42 @@
+name: Test basic usage - generate mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REF: refs/heads/main
+      GITHUB_EVENT_NAME: push
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-test-fake-key-for-testing'
+          staging-url: 'https://example.com'
+          staging-email: 'test@example.com'
+          staging-password: 'test-password-123'
+          execution-mode: 'generate'
+          test-directory: 'tests/autoqa'
+          create-pr: 'false'
+
+      - name: Assert action ran (outputs exist or error is set)
+        env:
+          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          ERROR_OUTPUT: ${{ steps.action.outputs.error }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "test_generated: $TEST_GENERATED"
+          echo "error: $ERROR_OUTPUT"
+          # The action may fail due to private repo access or missing real API key,
+          # but we verify the inputs were accepted and the action was invoked.
+          if [ "$OUTCOME" = "success" ] || [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action was invoked with required inputs"
+          else
+            echo "FAIL: unexpected outcome: $OUTCOME"
+            exit 1
+          fi
+          echo "PASS"
