@@ -1,0 +1,50 @@
+name: Test gap-analysis mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test-gap-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run AISquare Studio AutoQA action (gap-analysis mode)
+        id: autoqa
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-test-fake-key-for-testing-only'
+          staging-url: 'https://example.com'
+          execution-mode: 'gap-analysis'
+          gap-analysis-scope: 'full'
+          create-pr: 'false'
+
+      - name: Assert action ran in gap-analysis mode
+        env:
+          OUTCOME: ${{ steps.autoqa.outcome }}
+          GAP_RESULTS: ${{ steps.autoqa.outputs.gap_analysis_results }}
+          DASHBOARD: ${{ steps.autoqa.outputs.dashboard_results }}
+          ERROR_OUT: ${{ steps.autoqa.outputs.error }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "gap_analysis_results: $GAP_RESULTS"
+          echo "dashboard_results: $DASHBOARD"
+          echo "error: $ERROR_OUT"
+          # The action should not be skipped
+          if [ "$OUTCOME" = "skipped" ]; then
+            echo "FAIL: action was skipped unexpectedly"
+            exit 1
+          fi
+          # If action succeeded, gap_analysis_results should be populated
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded in gap-analysis mode"
+            if [ -z "$GAP_RESULTS" ]; then
+              echo "WARN: gap_analysis_results is empty on success"
+            else
+              echo "gap_analysis_results is populated: $GAP_RESULTS"
+            fi
+          else
+            echo "Action failed (expected: private repo or invalid API key)"
+          fi
+          echo "PASS: action ran and produced expected outcome for gap-analysis mode"

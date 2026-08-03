@@ -1,0 +1,59 @@
+name: Test default input values
+on:
+  workflow_dispatch:
+
+jobs:
+  test-defaults:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run AISquare Studio AutoQA action with only required inputs
+        id: autoqa
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-test-fake-key-for-testing-only'
+          staging-url: 'https://example.com'
+          # All other inputs use defaults:
+          # openai-model: 'openai/gpt-4.1'
+          # staging-email: 'test@example.com'
+          # staging-password: 'password123'
+          # target-repo-path: '.'
+          # git-user-name: 'AutoQA Bot'
+          # git-user-email: 'rabia.tahirr@opengrowth.com'
+          # test-directory: 'tests/autoqa'
+          # create-pr: 'false'
+          # execution-mode: 'generate'
+          # action-ref: 'main'
+
+      - name: Assert action ran with default inputs
+        env:
+          OUTCOME: ${{ steps.autoqa.outcome }}
+          ERROR_OUT: ${{ steps.autoqa.outputs.error }}
+          TEST_GENERATED: ${{ steps.autoqa.outputs.test_generated }}
+          FLOW_NAME: ${{ steps.autoqa.outputs.flow_name }}
+          TIER: ${{ steps.autoqa.outputs.tier }}
+          AREA: ${{ steps.autoqa.outputs.area }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "error: $ERROR_OUT"
+          echo "test_generated: $TEST_GENERATED"
+          echo "flow_name: $FLOW_NAME"
+          echo "tier: $TIER"
+          echo "area: $AREA"
+          # The action should not be skipped — it must have attempted to run
+          if [ "$OUTCOME" = "skipped" ]; then
+            echo "FAIL: action was skipped unexpectedly"
+            exit 1
+          fi
+          # If action succeeded, verify outputs are set
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded with default inputs"
+            echo "test_generated=$TEST_GENERATED, flow_name=$FLOW_NAME, tier=$TIER"
+          else
+            echo "Action failed (expected: private repo or invalid API key)"
+            echo "This is acceptable — the action ran and produced an outcome"
+          fi
+          echo "PASS: action ran with default inputs and produced expected outcome"

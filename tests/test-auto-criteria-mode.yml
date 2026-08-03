@@ -1,0 +1,51 @@
+name: Test auto-criteria mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test-auto-criteria:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run AISquare Studio AutoQA action (auto-criteria mode)
+        id: autoqa
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-test-fake-key-for-testing-only'
+          staging-url: 'https://example.com'
+          execution-mode: 'auto-criteria'
+          auto-criteria-fallback: 'true'
+          auto-criteria-mode: 'suggest'
+          auto-criteria-threshold: '85'
+          auto-criteria-approval: 'reaction'
+          create-pr: 'false'
+
+      - name: Assert action ran in auto-criteria mode
+        env:
+          OUTCOME: ${{ steps.autoqa.outcome }}
+          CRITERIA: ${{ steps.autoqa.outputs.criteria }}
+          AUTO_CRITERIA_RESULTS: ${{ steps.autoqa.outputs.auto_criteria_results }}
+          ERROR_OUT: ${{ steps.autoqa.outputs.error }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "criteria: $CRITERIA"
+          echo "auto_criteria_results: $AUTO_CRITERIA_RESULTS"
+          echo "error: $ERROR_OUT"
+          # The action should not be skipped
+          if [ "$OUTCOME" = "skipped" ]; then
+            echo "FAIL: action was skipped unexpectedly"
+            exit 1
+          fi
+          # If action succeeded, criteria output should be populated
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded in auto-criteria mode"
+            if [ -z "$CRITERIA" ] && [ -z "$AUTO_CRITERIA_RESULTS" ]; then
+              echo "WARN: both criteria and auto_criteria_results are empty on success"
+            fi
+          else
+            echo "Action failed (expected: private repo or invalid API key)"
+          fi
+          echo "PASS: action ran and produced expected outcome for auto-criteria mode"

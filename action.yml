@@ -1,0 +1,301 @@
+name: 'AISquare Studio AutoQA'
+description: 'AI-powered test generation with metadata-driven organization (flow_name, tier, area) using CrewAI + Playwright'
+author: 'AISquare Studio'
+branding:
+  icon: 'zap'
+  color: 'blue'
+inputs:
+  openai-api-key:
+    description: 'OpenAI API key for test generation'
+    required: true
+  openai-model:
+    description: 'OpenAI model to use for test generation (e.g., openai/gpt-4.1, openai/gpt-4o, openai/gpt-3.5-turbo)'
+    required: false
+    default: 'openai/gpt-4.1'
+  qa-github-token:
+    description: 'GitHub token with access to AutoQA repository (required for private repos)'
+    required: false
+    default: ${{ github.token }}
+  staging-url:
+    description: 'Staging environment URL for testing'
+    required: true
+  staging-email:
+    description: 'Test email for staging environment login'
+    required: false
+    default: 'test@example.com'
+  staging-password:
+    description: 'Test password for staging environment login'
+    required: false
+  target-repo-path:
+    description: 'Path to the target repository (usually ".")'
+    required: false
+    default: '.'
+  git-user-name:
+    description: 'Git user name for commits'
+    required: false
+    default: 'AutoQA Bot'
+  git-user-email:
+    description: 'Git user email for commits'
+    required: false
+    default: 'rabia.tahirr@opengrowth.com'
+  pr-body:
+    description: 'Pull request description to parse for AutoQA metadata block (```autoqa\nflow_name: ...\ntier: ...\n```)'
+    required: false
+    default: ${{ github.event.pull_request.body }}
+  test-directory:
+    description: 'Base directory for generated tests (will create tests/autoqa/{tier}/{area}/test_{flow_name}.py structure)'
+    required: false
+    default: 'tests/autoqa'
+  create-pr:
+    description: 'Create a pull request instead of pushing directly to main branch'
+    required: false
+    default: 'false'
+  execution-mode:
+    description: 'Mode of operation: "generate" (new test only), "suite" (run all tests), "all" (generate + run all), "auto-criteria" (AI generates test criteria from PR diff for developer review), "gap-driven" (uses memory coverage gaps to generate test criteria for uncovered modules), or "gap-analysis" (scans for present/missing test workflows and persists results to a SQLite database)'
+    required: false
+    default: 'generate'
+  action-ref:
+    description: 'Git ref (branch, tag, or SHA) to checkout for the AutoQA action repository. Defaults to main when not provided.'
+    required: false
+    default: 'main'
+  auto-criteria-fallback:
+    description: 'When true, if no autoqa block is found in the PR description, automatically generate test criteria from the PR diff (Proposal 16)'
+    required: false
+    default: 'false'
+  auto-criteria-mode:
+    description: 'Auto-criteria mode: "suggest" (post for review) or "auto" (proceed if high confidence)'
+    required: false
+    default: 'suggest'
+  auto-criteria-threshold:
+    description: 'Confidence score threshold (0-100) for auto-proceed mode'
+    required: false
+    default: '85'
+  auto-criteria-approval:
+    description: "Approval mechanism: \"reaction\" (\U0001F44D), \"comment\" (/autoqa approve), or \"label\" (autoqa:approved)"
+    required: false
+    default: 'reaction'
+  gap-analysis-scope:
+    description: 'Scope for gap-analysis mode: "auto" (detect from event), "pr" (PR changed files only), or "full" (entire repo)'
+    required: false
+    default: 'auto'
+outputs:
+  test_generated:
+    description: 'Whether a test was successfully generated'
+    value: ${{ steps.autoqa.outputs.test_generated }}
+  test_file_path:
+    description: 'Path to the generated test file (e.g., tests/autoqa/A/auth/test_user_login.py)'
+    value: ${{ steps.autoqa.outputs.test_file_path }}
+  test_results:
+    description: 'JSON string of test execution results'
+    value: ${{ steps.autoqa.outputs.test_results }}
+  generation_metadata:
+    description: 'JSON string of test generation metadata (includes flow_name, tier, area, etag, steps)'
+    value: ${{ steps.autoqa.outputs.generation_metadata }}
+  screenshot_path:
+    description: 'Path to the generated screenshot'
+    value: ${{ steps.autoqa.outputs.screenshot_path }}
+  etag:
+    description: 'ETag hash for idempotency (SHA256 of metadata + steps)'
+    value: ${{ steps.autoqa.outputs.etag }}
+  flow_name:
+    description: 'Flow name from AutoQA metadata'
+    value: ${{ steps.autoqa.outputs.flow_name }}
+  tier:
+    description: 'Test tier from AutoQA metadata (A, B, or C)'
+    value: ${{ steps.autoqa.outputs.tier }}
+  area:
+    description: 'Test area from AutoQA metadata (optional)'
+    value: ${{ steps.autoqa.outputs.area }}
+  error:
+    description: 'Error message if test generation or validation failed'
+    value: ${{ steps.autoqa.outputs.error }}
+  auto_criteria_results:
+    description: 'JSON string of auto-criteria generation results (when using auto-criteria mode)'
+    value: ${{ steps.autoqa.outputs.auto_criteria_results }}
+  criteria:
+    description: 'JSON string of generated test criteria (when using auto-criteria mode, before approval)'
+    value: ${{ steps.autoqa.outputs.criteria }}
+  gap_analysis_results:
+    description: 'JSON string of gap analysis results including present and missing workflows (when using gap-analysis mode)'
+    value: ${{ steps.autoqa.outputs.gap_analysis_results }}
+  dashboard_results:
+    description: 'JSON string conforming to the AutoQA Dashboard schema (gap_analysis, summary, test_cases) for populating the dashboard UI'
+    value: ${{ steps.autoqa.outputs.dashboard_results }}
+  tests_failed:
+    description: 'Whether tests failed during execution (true/false). When true, the action defers failure to the final step so that artifacts are still uploaded.'
+    value: ${{ steps.autoqa.outputs.tests_failed }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    # Cache the AutoQA action repository to avoid repeated clones
+    - name: "\U0001F5C2️ Cache AutoQA Repository"
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      with:
+        path: .autoqa-action
+        key: ${{ runner.os }}-autoqa-repo-${{ github.sha }}-v1
+        restore-keys: |
+          ${{ runner.os }}-autoqa-repo-v1
+    - name: "\U0001F50D Checkout AutoQA Action Repository"
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      with:
+        repository: 'AISquare-Studio/AISquare-Studio-QA'
+        token: ${{ inputs.qa-github-token }}
+        path: '.autoqa-action'
+        ref: ${{ inputs.action-ref }}
+    # Setup Python with pip caching based on requirements.txt hash
+    - name: "\U0001F40D Setup Python Environment"
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        cache-dependency-path: '.autoqa-action/requirements.txt'
+    # Cache Playwright browsers to avoid downloading ~100MB each run.
+    #
+    # THE CANONICAL EXPLANATION for the BROWSER cache — the two cache steps in
+    # .github/workflows/test-action.yml point here rather than repeating it.
+    # (The repo-clone cache above still carries a restore-key; it is a different
+    # shape and is tracked separately, because no cache-hit-gated step depends on
+    # it and the checkout that follows overwrites the path unconditionally.)
+    #
+    # NO restore-keys here. A partial-key restore hands back a browser directory built
+    # for a different Playwright version, `cache-hit` still reports 'true', the
+    # install step below is skipped, and the run dies with
+    # "BrowserType.launch: Executable doesn't exist". Exact-match only — a cache
+    # miss costs ~2-3 min, a wrong hit costs a red run and a bogus QA verdict,
+    # which is strictly worse for a tool whose entire output is a verdict.
+    #
+    # ONE key shared by all three steps that mount ~/.cache/ms-playwright. The
+    # hashFiles() inputs differ only by location (requirements.txt here is checked
+    # out as .autoqa-action/requirements.txt), so the content hash is identical and
+    # a shared prefix lets them reuse one warm cache. Distinct prefixes bought
+    # nothing and cost an extra cold miss each.
+    #
+    # The pin in requirements.txt is what makes this key able to rotate at all:
+    # with an unpinned `playwright`, hashFiles() is a constant.
+    - name: "\U0001F3AD Cache Playwright Browsers"
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      id: playwright-cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-ms-playwright-${{ hashFiles('.autoqa-action/requirements.txt') }}-v3
+    # Install Python dependencies (pip packages cached above)
+    - name: "\U0001F4E6 Install AutoQA Dependencies"
+      shell: bash
+      run: |
+        cd .autoqa-action
+        pip install -r requirements.txt
+    # Only install browsers if not cached (saves ~2-3 minutes per run)
+    - name: "\U0001F3AD Install Playwright Browsers"
+      if: steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        cd .autoqa-action
+        playwright install chromium
+        playwright install-deps chromium
+    # For cached browsers, only install system dependencies
+    - name: "\U0001F3AD Setup Playwright (cached browsers)"
+      if: steps.playwright-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        cd .autoqa-action
+        playwright install-deps chromium
+    - name: "\U0001F916 Execute AutoQA Workflow"
+      id: autoqa
+      shell: bash
+      run: |
+        cd .autoqa-action
+        python src/autoqa/action_runner.py
+      env:
+        # Core configuration
+        GITHUB_TOKEN: ${{ github.token }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENAI_MODEL_NAME: ${{ inputs.openai-model }}
+        STAGING_URL: ${{ inputs.staging-url }}
+        STAGING_EMAIL: ${{ inputs.staging-email }}
+        STAGING_PASSWORD: ${{ inputs.staging-password }}
+        # Action inputs as environment variables
+        TARGET_REPO_PATH: ${{ inputs.target-repo-path }}
+        GIT_USER_NAME: ${{ inputs.git-user-name }}
+        GIT_USER_EMAIL: ${{ inputs.git-user-email }}
+        PR_BODY: ${{ inputs.pr-body }}
+        TEST_DIRECTORY: ${{ inputs.test-directory }}
+        CREATE_PR: ${{ inputs.create-pr }}
+        EXECUTION_MODE: ${{ inputs.execution-mode }}
+        # Auto-criteria settings (Proposal 16)
+        AUTO_CRITERIA_FALLBACK: ${{ inputs.auto-criteria-fallback }}
+        AUTO_CRITERIA_MODE: ${{ inputs.auto-criteria-mode }}
+        AUTO_CRITERIA_THRESHOLD: ${{ inputs.auto-criteria-threshold }}
+        AUTO_CRITERIA_APPROVAL: ${{ inputs.auto-criteria-approval }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        # Gap analysis scope (auto-detected from event, or forced)
+        GAP_ANALYSIS_SCOPE: ${{ inputs.gap-analysis-scope }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        # GitHub context for cross-repo operations
+        TARGET_REPOSITORY: ${{ github.repository }}
+        GITHUB_WORKSPACE: ${{ github.workspace }}
+        GITHUB_SHA: ${{ github.sha }}
+        # Action working directory
+        ACTION_PATH: ${{ github.workspace }}/.autoqa-action
+    - name: "\U0001F4F8 Upload Screenshots as Artifacts"
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: autoqa-screenshots-${{ github.run_number }}
+        path: |
+          .autoqa-action/reports/screenshots/*.png
+          ${{ github.workspace }}/reports/screenshots/*.png
+        if-no-files-found: warn
+        retention-days: 30
+    - name: "\U0001F4CA Upload Test Reports"
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: autoqa-reports-${{ github.run_number }}
+        path: |
+          .autoqa-action/reports/**
+          ${{ github.workspace }}/reports/**
+          ${{ inputs.test-directory }}/**
+        if-no-files-found: warn
+        retention-days: 30
+    - name: "\U0001F4C8 Upload Dashboard Results"
+      if: always()
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      with:
+        name: autoqa-dashboard-${{ github.run_number }}
+        path: |
+          .autoqa-action/reports/dashboard_results.json
+          ${{ github.workspace }}/reports/dashboard_results.json
+        if-no-files-found: warn
+        retention-days: 30
+    - name: ❌ Fail if tests failed
+      if: always() && (steps.autoqa.outputs.tests_failed == 'true' || steps.autoqa.outcome == 'failure' || steps.autoqa.outcome == 'skipped')
+      shell: bash
+      env:
+        AUTOQA_OUTCOME: ${{ steps.autoqa.outcome }}
+      run: |
+        if [ "$AUTOQA_OUTCOME" = "skipped" ]; then
+          echo "::error::AutoQA step was skipped — a prior step (e.g. checkout) likely failed. Check the logs above."
+        elif [ "$AUTOQA_OUTCOME" = "failure" ]; then
+          echo "::error::AutoQA step failed — see logs above for details"
+        else
+          echo "::error::Tests failed — see uploaded artifacts for screenshots and reports"
+        fi
+        exit 1
