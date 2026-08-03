@@ -10,6 +10,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 |---------|-----|-----------------|
 | v0.1.0 | [`v0.1.0`](https://github.com/chainguard-actions/AISquare-Studio-AISquare-Studio-QA/tree/v0.1.0) | [`0db13ea`](https://github.com/AISquare-Studio/AISquare-Studio-QA/commit/0db13ea493842aaed4d45070b8f56f56d0061e40) |
 | v0.2.0 | [`v0.2.0`](https://github.com/chainguard-actions/AISquare-Studio-AISquare-Studio-QA/tree/v0.2.0) | [`895bd90`](https://github.com/AISquare-Studio/AISquare-Studio-QA/commit/895bd90f21c38c7553d34d1b77724d33690e81ad) |
+| v0.3.0 | [`v0.3.0`](https://github.com/chainguard-actions/AISquare-Studio-AISquare-Studio-QA/tree/v0.3.0) | [`a806efa`](https://github.com/AISquare-Studio/AISquare-Studio-QA/commit/a806efa37364def7e75be12df020eee066cac1f9) |
 
 ## Privacy
 
