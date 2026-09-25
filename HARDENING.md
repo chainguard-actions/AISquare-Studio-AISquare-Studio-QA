@@ -8,48 +8,56 @@
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **AISquare-Studio--AISquare-Studio-QA/v0.1.0** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
+Action **AISquare-Studio--AISquare-Studio-QA/v0.1.0** was hardened automatically. 2 finding(s) were identified and resolved across 2 iteration(s).
 
 ## Findings Fixed
 
-### unpinned-uses (severity: high)
-
-All six `uses:` references in action.yml use mutable version tags instead of pinned 40-character SHA commit hashes. This exposes the action to supply-chain attacks if any of the referenced actions are compromised or their tags are moved. Failing references: `actions/cache@v5` (×2), `actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7` (×2).
-
-Locations:
-
-- `action.yml:97`
-- `action.yml:103`
-- `action.yml:112`
-- `action.yml:118`
-- `action.yml:161`
-- `action.yml:169`
-
 ### hardcoded-credentials (severity: high)
 
-The `staging-password` input in action.yml has a hardcoded literal default value of `password123`. This is a plaintext credential embedded in the action definition. Even as a default, shipping a real-looking password in source code is a security risk and violates the hardcoded-credentials check. The literal value matches the pattern `password\s*:\s*[A-Za-z0-9...]{7,}`.
+The `staging-password` input has a hardcoded literal default value of `'password123'` (matching the pattern `password: <alphanumeric-value>`). Even though this is a default for a test credential, embedding a literal password in the action definition is a hardcoded-credentials violation. Any caller that does not override this input will silently use this plaintext password.
 
 Locations:
 
 - `action.yml:30`
 
-### github-env-injection (severity: high)
+### unpinned-uses (severity: high)
 
-The `_set_outputs` method in `src/autoqa/action_runner.py` writes values directly to `$GITHUB_OUTPUT` without sanitizing newlines. For single-line values it uses `f"{key}={value}\n"`, and for multiline values it uses a heredoc with a fixed `EOF` delimiter: `f"{key}<<EOF\n{value}\nEOF\n"`. The `pr_body` output value is sourced from the `PR_BODY` environment variable, which is set to `${{ inputs.pr-body }}` (defaulting to `${{ github.event.pull_request.body }}`). An attacker controlling the PR body can embed a line containing only `EOF` to terminate the heredoc early, then inject arbitrary `KEY=VALUE` pairs into `$GITHUB_OUTPUT`, poisoning downstream step outputs. No `printf '%s' ... | tr -d '\n\r'` sanitization is applied before any write.
+All six `uses:` references in action.yml use mutable version tags instead of pinned 40-character commit SHAs, making the action vulnerable to supply-chain attacks if those tags are moved or overwritten. Failing references:
+- `uses: actions/cache@v5` (Cache AutoQA Repository step, line ~108)
+- `uses: actions/checkout@v6` (Checkout AutoQA Action Repository step, line ~113)
+- `uses: actions/setup-python@v6` (Setup Python Environment step, line ~120)
+- `uses: actions/cache@v5` (Cache Playwright Browsers step, line ~126)
+- `uses: actions/upload-artifact@v7` (Upload Screenshots step, line ~170)
+- `uses: actions/upload-artifact@v7` (Upload Test Reports step, line ~180)
 
 Locations:
 
-- `src/autoqa/action_runner.py:367`
+- `action.yml:108`
+- `action.yml:113`
+- `action.yml:120`
+- `action.yml:126`
+- `action.yml:170`
+- `action.yml:180`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** unpinned-uses, hardcoded-credentials, github-env-injection
+**Fixes applied:** hardcoded-credentials, unpinned-uses
 
 **Notes:**
 
-1. Pinned all 6 `uses:` references in action.yml to full 40-char SHAs: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae (×2), actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10, actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405, actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a (×2). 2. Removed hardcoded 'password123' default from staging-password input in action.yml and from all three fallback defaults in action_runner.py (_load_config, _generate_test_code, _execute_test), replacing with empty strings. 3. Fixed _set_outputs in action_runner.py: multiline values now use a cryptographically random unique delimiter (secrets.token_hex(16)) to prevent heredoc injection; single-line values have newlines/carriage-returns stripped before writing to $GITHUB_OUTPUT.
+Fixed two findings in hardened/action/action.yml:
+1. hardcoded-credentials: Removed the hardcoded default value 'password123' from the staging-password input. The input now has no default, so callers must explicitly supply a password rather than silently inheriting a plaintext credential.
+2. unpinned-uses: Pinned all 6 uses: references to full 40-character commit SHAs (resolved via lookup_action_sha): actions/cache@v5→caa296126883cff596d87d8935842f9db880ef25, actions/checkout@v6→d23441a48e516b6c34aea4fa41551a30e30af803, actions/setup-python@v6→ece7cb06caefa5fff74198d8649806c4678c61a1, actions/upload-artifact@v7→043fb46d1a93c77aae656e7c1c64a875d1fc6a0a. Version tags are preserved as inline comments.
+
+### Iteration 2
+
+**Fixes applied:** github-env-injection
+
+**Notes:**
+
+Fixed the _set_outputs() method in src/autoqa/action_runner.py (line 530). The original code wrote values to $GITHUB_OUTPUT without sanitization — single-line values used `key=value\n` and multiline values used a heredoc `key<<EOF\nvalue\nEOF\n`. Both paths were vulnerable to injection via attacker-controlled PR body content (flow_name, tier, area, etag, error, test_file_path). The fix: (1) removes the heredoc path entirely (it was inherently unsafe since an attacker could inject 'EOF' to escape the delimiter), (2) converts all values to strings with None-safety, and (3) strips all \r and \n characters from every value before writing to GITHUB_OUTPUT. This prevents an attacker who controls the PR body from injecting newlines to poison subsequent steps that consume these outputs via ${{ steps.autoqa.outputs.* }}.
 

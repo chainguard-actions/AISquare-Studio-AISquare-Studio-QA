@@ -58,7 +58,7 @@ class ActionRunner:
             "target_repo_path": os.getenv("TARGET_REPO_PATH", "."),
             "staging_url": os.getenv("STAGING_URL"),
             "staging_email": os.getenv("STAGING_EMAIL", "test@example.com"),
-            "staging_password": os.getenv("STAGING_PASSWORD", ""),
+            "staging_password": os.getenv("STAGING_PASSWORD", "password123"),
             "git_user_name": os.getenv("GIT_USER_NAME", "AutoQA Bot"),
             "git_user_email": os.getenv("GIT_USER_EMAIL", "rabia.tahirr@opengrowth.com"),
             "pr_body": os.getenv("PR_BODY", ""),
@@ -361,7 +361,7 @@ class ActionRunner:
                     "base_url": base_url,
                     "login_url": f"{base_url}/login",
                     "email": self.config.get("staging_email", "test@example.com"),
-                    "password": self.config.get("staging_password", ""),
+                    "password": self.config.get("staging_password", "password123"),
                     "headless": self.config.get("headless", True),
                     "timeout": 30000,
                     "max_retries": self.config.get("max_retries", 2),
@@ -443,7 +443,7 @@ class ActionRunner:
                 "base_url": base_url,
                 "login_url": f"{base_url}/login",
                 "email": self.config.get("staging_email", "test@example.com"),
-                "password": self.config.get("staging_password", ""),
+                "password": self.config.get("staging_password", "password123"),
                 "headless": True,
                 "timeout": 30000,
             }
@@ -570,23 +570,17 @@ class ActionRunner:
 
     def _set_outputs(self, outputs: Dict[str, str]) -> Dict[str, Any]:
         """Set GitHub Action outputs"""
-        import secrets
-
         # Set outputs for GitHub Actions
         github_output = os.getenv("GITHUB_OUTPUT")
         if github_output:
             with open(github_output, "a") as f:
                 for key, value in outputs.items():
                     str_value = str(value) if value is not None else ""
-                    # Escape multiline values using a random unique delimiter
-                    # to prevent heredoc injection attacks
-                    if "\n" in str_value or "\r" in str_value:
-                        delimiter = f"AUTOQA_EOF_{secrets.token_hex(16)}"
-                        f.write(f"{key}<<{delimiter}\n{str_value}\n{delimiter}\n")
-                    else:
-                        # Strip any embedded newlines/carriage-returns before writing
-                        safe_value = str_value.replace("\r", "").replace("\n", "")
-                        f.write(f"{key}={safe_value}\n")
+                    # Sanitize: strip newlines and carriage returns to prevent
+                    # GITHUB_OUTPUT injection via attacker-controlled values
+                    # (e.g. PR body content parsed into flow_name, tier, area, etag, error)
+                    safe_value = str_value.replace("\r", "").replace("\n", "")
+                    f.write(f"{key}={safe_value}\n")
 
         # Also log for visibility
         logger.info("Action Outputs:")

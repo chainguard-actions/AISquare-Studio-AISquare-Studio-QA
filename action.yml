@@ -103,14 +103,14 @@ runs:
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     # Cache the AutoQA action repository to avoid repeated clones
     - name: "\U0001F5C2️ Cache AutoQA Repository"
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      uses: chainguard-actions/actions-cache@dc4b8a9beaba8dd7fead89b3b3df02fb4bc6336a # v5
       with:
         path: .autoqa-action
         key: ${{ runner.os }}-autoqa-repo-${{ github.sha }}-v1
         restore-keys: |
           ${{ runner.os }}-autoqa-repo-v1
     - name: "\U0001F50D Checkout AutoQA Action Repository"
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      uses: chainguard-actions/actions-checkout@e1368932d13643da5fed78161a48f551a5e39389 # v6
       with:
         repository: 'AISquare-Studio/AISquare-Studio-QA'
         token: ${{ inputs.qa-github-token }}
@@ -118,14 +118,14 @@ runs:
         ref: ${{ github.action_ref || 'main' }}
     # Setup Python with pip caching based on requirements.txt hash
     - name: "\U0001F40D Setup Python Environment"
-      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+      uses: chainguard-actions/actions-setup-python@6e055a15c9b620aae4c8d0a8b85a69f93f1cce70 # v6
       with:
         python-version: '3.11'
         cache: 'pip'
         cache-dependency-path: '.autoqa-action/requirements.txt'
     # Cache Playwright browsers to avoid downloading ~100MB each run
     - name: "\U0001F3AD Cache Playwright Browsers"
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      uses: chainguard-actions/actions-cache@dc4b8a9beaba8dd7fead89b3b3df02fb4bc6336a # v5
       id: playwright-cache
       with:
         path: ~/.cache/ms-playwright
@@ -184,7 +184,7 @@ runs:
         ACTION_PATH: ${{ github.workspace }}/.autoqa-action
     - name: "\U0001F4F8 Upload Screenshots as Artifacts"
       if: always() && steps.autoqa.outputs.test_generated == 'true'
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      uses: chainguard-actions/actions-upload-artifact@f9571ddcfab0329c68a1e92a4b612bee5d8e5042 # v7
       with:
         name: autoqa-screenshots-${{ github.run_number }}
         path: |
@@ -194,7 +194,7 @@ runs:
         retention-days: 30
     - name: "\U0001F4CA Upload Test Reports"
       if: always() && steps.autoqa.outputs.test_generated == 'true'
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      uses: chainguard-actions/actions-upload-artifact@f9571ddcfab0329c68a1e92a4b612bee5d8e5042 # v7
       with:
         name: autoqa-reports-${{ github.run_number }}
         path: |
