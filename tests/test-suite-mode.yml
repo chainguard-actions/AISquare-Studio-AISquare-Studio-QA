@@ -1,4 +1,4 @@
-name: Test basic usage (graceful failure on private repo)
+name: Test suite execution mode (run all tests)
 on:
   workflow_dispatch:
 
@@ -14,21 +14,27 @@ jobs:
         with:
           openai-api-key: 'sk-fake-key-for-testing'
           staging-url: 'https://example.com'
-          staging-email: 'test@example.com'
-          staging-password: 'password123'
-          execution-mode: 'generate'
+          staging-email: 'suite@example.com'
+          staging-password: 'suitepass'
+          execution-mode: 'suite'
+          test-directory: 'tests/autoqa'
+          git-user-name: 'Test Bot'
+          git-user-email: 'testbot@example.com'
 
-      - name: Assert action ran or failed gracefully
+      - name: Assert suite mode ran or failed gracefully
         env:
           OUTCOME: ${{ steps.action.outcome }}
-          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          TEST_RESULTS: ${{ steps.action.outputs.test_results }}
+          TESTS_FAILED: ${{ steps.action.outputs.tests_failed }}
           ERROR_OUT: ${{ steps.action.outputs.error }}
         run: |
           echo "outcome: $OUTCOME"
-          echo "test_generated: $TEST_GENERATED"
+          echo "test_results: $TEST_RESULTS"
+          echo "tests_failed: $TESTS_FAILED"
           echo "error: $ERROR_OUT"
           if [ "$OUTCOME" = "success" ]; then
-            echo "PASS: action succeeded"
+            echo "Action succeeded in suite mode"
+            echo "PASS"
           elif [ "$OUTCOME" = "failure" ]; then
             echo "PASS: action failed gracefully (expected — private repo not accessible or API key invalid)"
           else

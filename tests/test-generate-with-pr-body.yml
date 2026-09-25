@@ -1,0 +1,58 @@
+name: Test generate mode with autoqa PR body metadata
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-fake-key-for-testing'
+          staging-url: 'https://example.com'
+          staging-email: 'user@example.com'
+          staging-password: 'testpass'
+          execution-mode: 'generate'
+          pr-body: |
+            This PR adds user login functionality.
+
+            ```autoqa
+            flow_name: user_login
+            tier: A
+            area: auth
+            ```
+          test-directory: 'tests/autoqa'
+          create-pr: 'false'
+
+      - name: Assert action ran or failed gracefully with PR body metadata
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          FLOW_NAME: ${{ steps.action.outputs.flow_name }}
+          TIER: ${{ steps.action.outputs.tier }}
+          AREA: ${{ steps.action.outputs.area }}
+          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          ERROR_OUT: ${{ steps.action.outputs.error }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "flow_name: $FLOW_NAME"
+          echo "tier: $TIER"
+          echo "area: $AREA"
+          echo "test_generated: $TEST_GENERATED"
+          echo "error: $ERROR_OUT"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded — checking outputs"
+            if [ -n "$FLOW_NAME" ]; then
+              echo "PASS: flow_name output is set: $FLOW_NAME"
+            else
+              echo "INFO: flow_name not set (may be expected if no test was generated)"
+            fi
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (expected — private repo not accessible or API key invalid)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

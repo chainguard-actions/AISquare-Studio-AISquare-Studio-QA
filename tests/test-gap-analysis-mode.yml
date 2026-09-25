@@ -1,4 +1,4 @@
-name: Test basic usage (graceful failure on private repo)
+name: Test gap-analysis execution mode
 on:
   workflow_dispatch:
 
@@ -14,21 +14,24 @@ jobs:
         with:
           openai-api-key: 'sk-fake-key-for-testing'
           staging-url: 'https://example.com'
-          staging-email: 'test@example.com'
-          staging-password: 'password123'
-          execution-mode: 'generate'
+          execution-mode: 'gap-analysis'
+          gap-analysis-scope: 'full'
+          test-directory: 'tests/autoqa'
 
-      - name: Assert action ran or failed gracefully
+      - name: Assert gap-analysis mode ran or failed gracefully
         env:
           OUTCOME: ${{ steps.action.outcome }}
-          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          GAP_RESULTS: ${{ steps.action.outputs.gap_analysis_results }}
+          DASHBOARD: ${{ steps.action.outputs.dashboard_results }}
           ERROR_OUT: ${{ steps.action.outputs.error }}
         run: |
           echo "outcome: $OUTCOME"
-          echo "test_generated: $TEST_GENERATED"
+          echo "gap_analysis_results: $GAP_RESULTS"
+          echo "dashboard_results: $DASHBOARD"
           echo "error: $ERROR_OUT"
           if [ "$OUTCOME" = "success" ]; then
-            echo "PASS: action succeeded"
+            echo "Action succeeded in gap-analysis mode"
+            echo "PASS"
           elif [ "$OUTCOME" = "failure" ]; then
             echo "PASS: action failed gracefully (expected — private repo not accessible or API key invalid)"
           else
