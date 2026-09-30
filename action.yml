@@ -184,7 +184,7 @@ runs:
         ACTION_PATH: ${{ github.workspace }}/.autoqa-action
     - name: "\U0001F4F8 Upload Screenshots as Artifacts"
       if: always() && steps.autoqa.outputs.test_generated == 'true'
-      uses: chainguard-actions/actions-upload-artifact@f9571ddcfab0329c68a1e92a4b612bee5d8e5042 # v7
+      uses: chainguard-actions/actions-upload-artifact@dc8d35a3347d79eda9033e7af73f508094dd41b5 # v7
       with:
         name: autoqa-screenshots-${{ github.run_number }}
         path: |
@@ -194,7 +194,7 @@ runs:
         retention-days: 30
     - name: "\U0001F4CA Upload Test Reports"
       if: always() && steps.autoqa.outputs.test_generated == 'true'
-      uses: chainguard-actions/actions-upload-artifact@f9571ddcfab0329c68a1e92a4b612bee5d8e5042 # v7
+      uses: chainguard-actions/actions-upload-artifact@dc8d35a3347d79eda9033e7af73f508094dd41b5 # v7
       with:
         name: autoqa-reports-${{ github.run_number }}
         path: |
