@@ -14,58 +14,63 @@ Action **AISquare-Studio--AISquare-Studio-QA/v0.3.0** was hardened automatically
 
 ## Findings Fixed
 
-### script-injection (severity: high)
-
-The '❌ Fail if tests failed' run: block directly interpolates ${{ steps.autoqa.outcome }} inside shell command strings (sub-rule a). Although steps.*.outcome is GitHub-controlled, any ${{ ... }} expression interpolated directly into a run: shell script is a script-injection finding — the value is substituted into the shell command before the shell parses it. Offending lines:
-  if [ "${{ steps.autoqa.outcome }}" = "skipped" ]; then
-  elif [ "${{ steps.autoqa.outcome }}" = "failure" ]; then
-These should be moved to an env: variable and referenced as "$STEP_OUTCOME" instead.
-
-Locations:
-
-- `action.yml:271`
-- `action.yml:273`
-
 ### unpinned-uses (severity: high)
 
-All 7 uses: references in action.yml use mutable version tags instead of pinned 40-character SHA commit digests, making the action vulnerable to supply-chain attacks if any of these actions are compromised or their tags are moved:
-- actions/cache@v5 (Cache AutoQA Repository step)
-- actions/checkout@v6 (Checkout AutoQA Action Repository step)
-- actions/setup-python@v6 (Setup Python Environment step)
-- actions/cache@v5 (Cache Playwright Browsers step)
-- actions/upload-artifact@v7 (Upload Screenshots as Artifacts step)
-- actions/upload-artifact@v7 (Upload Test Reports step)
-- actions/upload-artifact@v7 (Upload Dashboard Results step)
-All should be pinned to their full 40-hex-character SHA, e.g. uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+All 7 `uses:` references in action.yml use mutable version tags instead of pinned 40-character SHA digests, exposing the action to supply-chain attacks if any upstream action is compromised or a tag is moved. Failing references:
+- `actions/cache@v5` (Cache AutoQA Repository step)
+- `actions/checkout@v6` (Checkout AutoQA Action Repository step)
+- `actions/setup-python@v6` (Setup Python Environment step)
+- `actions/cache@v5` (Cache Playwright Browsers step)
+- `actions/upload-artifact@v7` (Upload Screenshots as Artifacts step)
+- `actions/upload-artifact@v7` (Upload Test Reports step)
+- `actions/upload-artifact@v7` (Upload Dashboard Results step)
 
 Locations:
 
-- `action.yml:161`
-- `action.yml:167`
-- `action.yml:173`
-- `action.yml:213`
-- `action.yml:249`
-- `action.yml:257`
-- `action.yml:265`
+- `action.yml:196`
+- `action.yml:202`
+- `action.yml:210`
+- `action.yml:228`
+- `action.yml:263`
+- `action.yml:274`
+- `action.yml:285`
+
+### script-injection (severity: high)
+
+Rule (a) violation: The 'Fail if tests failed' run: block directly interpolates `${{ steps.autoqa.outcome }}` inside a shell `if` statement. Any `${{ ... }}` expression interpolated directly into a `run:` shell command string is a script-injection risk — the YAML template substitution happens before the shell ever sees the value. Offending lines:
+  `if [ "${{ steps.autoqa.outcome }}" = "skipped" ]; then`
+  `elif [ "${{ steps.autoqa.outcome }}" = "failure" ]; then`
+These should be moved to an `env:` block and referenced as `"$AUTOQA_OUTCOME"` in the shell script.
+
+Locations:
+
+- `action.yml:296`
 
 ### hardcoded-credentials (severity: high)
 
-The 'staging-password' input has a hardcoded literal default value of 'password123'. This matches the pattern password: <literal-value> and embeds a credential directly in the action definition. Even as a default/example value, hardcoded passwords in action.yml are a security risk as they may be used in production without being overridden. The default should be removed or replaced with an empty string, requiring callers to always supply the value explicitly.
+The `staging-password` input has a hardcoded literal default value `password123` — a non-expression literal string assigned to a field whose name contains `password`. Even though this is a default for a test credential, hardcoding it in the action definition is a security anti-pattern: it may be inadvertently used against real staging environments and is visible to anyone reading the action source. The value should be left empty (no default) and required to be supplied explicitly by the caller via a secret. Additionally, `staging-email` has a hardcoded default `test@example.com`.
 
 Locations:
 
-- `action.yml:29`
+- `action.yml:30`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** hardcoded-credentials, unpinned-uses, script-injection
+**Fixes applied:** unpinned-uses, script-injection, hardcoded-credentials
 
 **Notes:**
 
 Fixed all three findings in hardened/action/action.yml:
-1. hardcoded-credentials (line 29): Replaced default: 'password123' with default: '' for the staging-password input.
-2. unpinned-uses (lines 161, 167, 173, 213, 249, 257, 265): Pinned all 7 uses: references to full 40-char commit SHAs — actions/cache@v5 → caa296126883cff596d87d8935842f9db880ef25, actions/checkout@v6 → d23441a48e516b6c34aea4fa41551a30e30af803, actions/setup-python@v6 → ece7cb06caefa5fff74198d8649806c4678c61a1, actions/upload-artifact@v7 → cf430e030ddbb5b0abf93d22962f4752f3646cd9. Original tags preserved as inline comments.
-3. script-injection (lines 271, 273): Moved ${{ steps.autoqa.outcome }} into an env: block as AUTOQA_OUTCOME and replaced both inline ${{ steps.autoqa.outcome }} interpolations in the run: shell script with $AUTOQA_OUTCOME.
+
+1. **unpinned-uses**: Pinned all 7 `uses:` references to full 40-character SHA digests:
+   - `actions/cache@v5` → `actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5` (2 occurrences)
+   - `actions/checkout@v6` → `actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6`
+   - `actions/setup-python@v6` → `actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6`
+   - `actions/upload-artifact@v7` → `actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7` (3 occurrences)
+
+2. **script-injection**: Moved `${{ steps.autoqa.outcome }}` out of the `run:` shell script into an `env:` block as `AUTOQA_OUTCOME`, and updated the shell conditionals to reference `$AUTOQA_OUTCOME` instead.
+
+3. **hardcoded-credentials**: Removed the hardcoded default values `'password123'` for `staging-password` and `'test@example.com'` for `staging-email`. Both inputs are now optional with no default, requiring callers to supply credentials explicitly.
 
