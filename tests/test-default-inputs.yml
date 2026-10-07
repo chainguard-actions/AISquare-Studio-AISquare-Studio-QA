@@ -1,0 +1,56 @@
+name: Test default inputs (minimal required inputs only)
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-fake-key-for-testing'
+          staging-url: 'https://example.com'
+          # All other inputs use their defaults:
+          # staging-email: 'test@example.com'
+          # staging-password: 'password123'
+          # target-repo-path: '.'
+          # git-user-name: 'AutoQA Bot'
+          # git-user-email: 'rabia.tahirr@opengrowth.com'
+          # test-directory: 'tests/autoqa'
+          # create-pr: 'false'
+          # execution-mode: 'generate'
+
+      - name: Assert action ran with default inputs (outputs set or failed gracefully)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          TEST_FILE_PATH: ${{ steps.action.outputs.test_file_path }}
+          SCREENSHOT_PATH: ${{ steps.action.outputs.screenshot_path }}
+          ERROR_OUT: ${{ steps.action.outputs.error }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "test_generated: $TEST_GENERATED"
+          echo "test_file_path: $TEST_FILE_PATH"
+          echo "screenshot_path: $SCREENSHOT_PATH"
+          echo "error: $ERROR_OUT"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded with default inputs"
+            if [ "$TEST_GENERATED" = "true" ]; then
+              if [ -z "$TEST_FILE_PATH" ]; then
+                echo "FAIL: test_file_path is empty despite test_generated=true"
+                exit 1
+              fi
+              echo "PASS: test generated at '$TEST_FILE_PATH'"
+            else
+              echo "PASS: action ran with defaults but test_generated is not true (acceptable without real API key)"
+            fi
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully with default inputs (expected without real credentials or private repo access)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

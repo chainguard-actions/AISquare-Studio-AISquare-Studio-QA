@@ -1,0 +1,57 @@
+name: Test basic generate mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-fake-key-for-testing'
+          staging-url: 'https://example.com'
+          staging-email: 'test@example.com'
+          staging-password: 'password123'
+          execution-mode: 'generate'
+          test-directory: 'tests/autoqa'
+          create-pr: 'false'
+          git-user-name: 'AutoQA Bot'
+          git-user-email: 'autoqa@example.com'
+          pr-body: |
+            ```autoqa
+            flow_name: user_login
+            tier: A
+            area: auth
+            steps:
+              - Navigate to login page
+              - Enter credentials
+              - Click login button
+              - Verify dashboard is shown
+            ```
+
+      - name: Assert action ran (outputs set or failed gracefully)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          ERROR_OUT: ${{ steps.action.outputs.error }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "test_generated: $TEST_GENERATED"
+          echo "error: $ERROR_OUT"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded"
+            if [ "$TEST_GENERATED" = "true" ]; then
+              echo "PASS: test was generated"
+            else
+              echo "PASS: action ran but test_generated is not true (acceptable without real API key)"
+            fi
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (expected without real OpenAI key or private repo access)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

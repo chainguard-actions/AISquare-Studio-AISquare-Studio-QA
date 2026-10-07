@@ -576,9 +576,8 @@ class ActionRunner:
             with open(github_output, "a") as f:
                 for key, value in outputs.items():
                     str_value = str(value) if value is not None else ""
-                    # Sanitize: strip newlines and carriage returns to prevent
-                    # GITHUB_OUTPUT injection via attacker-controlled values
-                    # (e.g. PR body content parsed into flow_name, tier, area, etag, error)
+                    # Sanitize value: strip newline/carriage-return characters to prevent
+                    # GITHUB_OUTPUT injection via attacker-controlled inputs (e.g. PR body).
                     safe_value = str_value.replace("\r", "").replace("\n", "")
                     f.write(f"{key}={safe_value}\n")
 

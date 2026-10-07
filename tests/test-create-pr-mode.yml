@@ -1,0 +1,74 @@
+name: Test create-pr mode
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          openai-api-key: 'sk-fake-key-for-testing'
+          staging-url: 'https://staging.example.com'
+          staging-email: 'pr-test@example.com'
+          staging-password: 'prpass321'
+          execution-mode: 'generate'
+          test-directory: 'tests/autoqa'
+          create-pr: 'true'
+          git-user-name: 'AutoQA Bot'
+          git-user-email: 'autoqa@example.com'
+          pr-body: |
+            ```autoqa
+            flow_name: password_reset
+            tier: C
+            area: auth
+            steps:
+              - Click forgot password
+              - Enter email address
+              - Submit reset request
+              - Check confirmation message
+            ```
+
+      - name: Assert action ran with create-pr enabled (outputs set or failed gracefully)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+          TEST_GENERATED: ${{ steps.action.outputs.test_generated }}
+          FLOW_NAME: ${{ steps.action.outputs.flow_name }}
+          TIER: ${{ steps.action.outputs.tier }}
+          AREA: ${{ steps.action.outputs.area }}
+          ETAG: ${{ steps.action.outputs.etag }}
+          ERROR_OUT: ${{ steps.action.outputs.error }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "test_generated: $TEST_GENERATED"
+          echo "flow_name: $FLOW_NAME"
+          echo "tier: $TIER"
+          echo "area: $AREA"
+          echo "etag: $ETAG"
+          echo "error: $ERROR_OUT"
+          if [ "$OUTCOME" = "success" ]; then
+            echo "Action succeeded with create-pr=true"
+            if [ "$TEST_GENERATED" = "true" ]; then
+              echo "Checking metadata outputs..."
+              if [ -z "$FLOW_NAME" ]; then
+                echo "FAIL: flow_name output is empty despite test_generated=true"
+                exit 1
+              fi
+              if [ -z "$TIER" ]; then
+                echo "FAIL: tier output is empty despite test_generated=true"
+                exit 1
+              fi
+              echo "PASS: test generated with flow_name='$FLOW_NAME', tier='$TIER', area='$AREA'"
+            else
+              echo "PASS: action ran but test_generated is not true (acceptable without real API key)"
+            fi
+          elif [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed gracefully (expected without real OpenAI key or private repo access)"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi

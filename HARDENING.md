@@ -10,54 +10,62 @@
 
 **Harden Agent Version:** `2`
 
-Action **AISquare-Studio--AISquare-Studio-QA/v0.1.0** was hardened automatically. 2 finding(s) were identified and resolved across 2 iteration(s).
+Action **AISquare-Studio--AISquare-Studio-QA/v0.1.0** was hardened automatically. 2 finding(s) were identified and resolved across 3 iteration(s).
 
 ## Findings Fixed
 
+### unpinned-uses (severity: high)
+
+All 6 `uses:` references in action.yml use mutable version tags instead of pinned 40-character commit SHA hashes. This exposes the action to supply-chain attacks where a tag could be silently moved to point to malicious code. Failing references: `actions/cache@v5` (×2), `actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7` (×2). Each should be pinned to a full SHA, e.g. `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4`.
+
+Locations:
+
+- `action.yml:88`
+- `action.yml:94`
+- `action.yml:101`
+- `action.yml:108`
+- `action.yml:163`
+- `action.yml:173`
+
 ### hardcoded-credentials (severity: high)
 
-The `staging-password` input has a hardcoded literal default value of `'password123'` (matching the pattern `password: <alphanumeric-value>`). Even though this is a default for a test credential, embedding a literal password in the action definition is a hardcoded-credentials violation. Any caller that does not override this input will silently use this plaintext password.
+The `staging-password` input has a hardcoded literal default value of `password123`. This is a plaintext password embedded directly in the action definition. Even as a default/example value, hardcoded passwords are a security risk — they may be used in real environments and are visible to anyone who reads the action source. The value should be removed or replaced with a reference to a secret (e.g. `${{ secrets.STAGING_PASSWORD }}`).
 
 Locations:
 
 - `action.yml:30`
 
-### unpinned-uses (severity: high)
-
-All six `uses:` references in action.yml use mutable version tags instead of pinned 40-character commit SHAs, making the action vulnerable to supply-chain attacks if those tags are moved or overwritten. Failing references:
-- `uses: actions/cache@v5` (Cache AutoQA Repository step, line ~108)
-- `uses: actions/checkout@v6` (Checkout AutoQA Action Repository step, line ~113)
-- `uses: actions/setup-python@v6` (Setup Python Environment step, line ~120)
-- `uses: actions/cache@v5` (Cache Playwright Browsers step, line ~126)
-- `uses: actions/upload-artifact@v7` (Upload Screenshots step, line ~170)
-- `uses: actions/upload-artifact@v7` (Upload Test Reports step, line ~180)
-
-Locations:
-
-- `action.yml:108`
-- `action.yml:113`
-- `action.yml:120`
-- `action.yml:126`
-- `action.yml:170`
-- `action.yml:180`
-
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** hardcoded-credentials, unpinned-uses
+**Fixes applied:** unpinned-uses, hardcoded-credentials
 
 **Notes:**
 
-Fixed two findings in hardened/action/action.yml:
-1. hardcoded-credentials: Removed the hardcoded default value 'password123' from the staging-password input. The input now has no default, so callers must explicitly supply a password rather than silently inheriting a plaintext credential.
-2. unpinned-uses: Pinned all 6 uses: references to full 40-character commit SHAs (resolved via lookup_action_sha): actions/cache@v5→caa296126883cff596d87d8935842f9db880ef25, actions/checkout@v6→d23441a48e516b6c34aea4fa41551a30e30af803, actions/setup-python@v6→ece7cb06caefa5fff74198d8649806c4678c61a1, actions/upload-artifact@v7→043fb46d1a93c77aae656e7c1c64a875d1fc6a0a. Version tags are preserved as inline comments.
+Fixed all 6 unpinned `uses:` references by pinning them to their full 40-character commit SHAs (with version tag comments for readability): actions/cache@v5→caa2961..., actions/checkout@v6→d23441a..., actions/setup-python@v6→ece7cb0..., actions/upload-artifact@v7→cf430e0.... Removed the hardcoded default password 'password123' from the staging-password input definition.
 
 ### Iteration 2
+
+**Fixes applied:** script-injection, github-env-injection, unpinned-uses, missing-permissions
+
+**Notes:**
+
+Fixed all four findings in examples/fe-react-autoqa-workflow.yml:
+
+1. missing-permissions: Added `permissions: {}` at top level; `contents: read, pull-requests: read` on `autoqa` job; `pull-requests: read` on `validate-autoqa-format` job.
+
+2. unpinned-uses: Pinned all three actions to full commit SHAs — actions/checkout@11d5960a326750d5838078e36cf38b85af677262 (v4), AISquare-Studio/AISquare-Studio-QA@71db4eea23e14f684b5c91c2dbbc9d5145510b48 (main), actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 (v4).
+
+3. script-injection: Moved all ${{ }} expressions from run: shell blocks into env: blocks. In 'Get PR Body': EVENT_NAME, REPOSITORY, PR_NUMBER, PR_BODY_RAW env vars replace inline expressions. In 'Check AutoQA Format': PR_BODY env var replaces inline expression.
+
+4. github-env-injection: PR_BODY is now sanitized with `printf '%s' "$PR_BODY" | tr -d '\r'` before being written to GITHUB_OUTPUT, preventing newline injection attacks.
+
+### Iteration 3
 
 **Fixes applied:** github-env-injection
 
 **Notes:**
 
-Fixed the _set_outputs() method in src/autoqa/action_runner.py (line 530). The original code wrote values to $GITHUB_OUTPUT without sanitization — single-line values used `key=value\n` and multiline values used a heredoc `key<<EOF\nvalue\nEOF\n`. Both paths were vulnerable to injection via attacker-controlled PR body content (flow_name, tier, area, etag, error, test_file_path). The fix: (1) removes the heredoc path entirely (it was inherently unsafe since an attacker could inject 'EOF' to escape the delimiter), (2) converts all values to strings with None-safety, and (3) strips all \r and \n characters from every value before writing to GITHUB_OUTPUT. This prevents an attacker who controls the PR body from injecting newlines to poison subsequent steps that consume these outputs via ${{ steps.autoqa.outputs.* }}.
+Fixed the _set_outputs method in src/autoqa/action_runner.py to sanitize values before writing to $GITHUB_OUTPUT. The original code wrote attacker-controlled values (parsed from PR_BODY, which comes from github.event.pull_request.body) directly to GITHUB_OUTPUT without stripping newlines, allowing injection of arbitrary key=value pairs. The fix converts each value to a string, then strips all \r and \n characters before writing, preventing newline injection. The multiline heredoc path was also removed since all values are now sanitized to be single-line safe.
 
