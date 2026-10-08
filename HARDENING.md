@@ -10,30 +10,31 @@
 
 **Harden Agent Version:** `2`
 
-Action **AISquare-Studio--AISquare-Studio-QA/v0.1.0** was hardened automatically. 2 finding(s) were identified and resolved across 3 iteration(s).
+Action **AISquare-Studio--AISquare-Studio-QA/v0.1.0** was hardened automatically. 2 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### unpinned-uses (severity: high)
 
-All 6 `uses:` references in action.yml use mutable version tags instead of pinned 40-character commit SHA hashes. This exposes the action to supply-chain attacks where a tag could be silently moved to point to malicious code. Failing references: `actions/cache@v5` (×2), `actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7` (×2). Each should be pinned to a full SHA, e.g. `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4`.
+All 6 `uses:` references in action.yml use mutable version tags instead of pinned 40-character SHA commit digests. This exposes the action to supply-chain attacks where a tag can be silently moved to point to malicious code. Failing references: `actions/cache@v5` (×2), `actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7` (×2).
 
 Locations:
 
-- `action.yml:88`
-- `action.yml:94`
-- `action.yml:101`
-- `action.yml:108`
-- `action.yml:163`
-- `action.yml:173`
+- `action.yml:118`
+- `action.yml:126`
+- `action.yml:135`
+- `action.yml:143`
+- `action.yml:196`
+- `action.yml:207`
 
 ### hardcoded-credentials (severity: high)
 
-The `staging-password` input has a hardcoded literal default value of `password123`. This is a plaintext password embedded directly in the action definition. Even as a default/example value, hardcoded passwords are a security risk — they may be used in real environments and are visible to anyone who reads the action source. The value should be removed or replaced with a reference to a secret (e.g. `${{ secrets.STAGING_PASSWORD }}`).
+action.yml contains a hardcoded literal password as the default value for the `staging-password` input: `default: 'password123'`. This is a hardcoded credential embedded in the action definition. Any workflow using this action without explicitly overriding the input will use this literal password. Additionally, a hardcoded email address is set as the default for `staging-email`: `default: 'test@example.com'`.
 
 Locations:
 
-- `action.yml:30`
+- `action.yml:33`
+- `action.yml:28`
 
 ## Iteration Notes
 
@@ -43,29 +44,5 @@ Locations:
 
 **Notes:**
 
-Fixed all 6 unpinned `uses:` references by pinning them to their full 40-character commit SHAs (with version tag comments for readability): actions/cache@v5→caa2961..., actions/checkout@v6→d23441a..., actions/setup-python@v6→ece7cb0..., actions/upload-artifact@v7→cf430e0.... Removed the hardcoded default password 'password123' from the staging-password input definition.
-
-### Iteration 2
-
-**Fixes applied:** script-injection, github-env-injection, unpinned-uses, missing-permissions
-
-**Notes:**
-
-Fixed all four findings in examples/fe-react-autoqa-workflow.yml:
-
-1. missing-permissions: Added `permissions: {}` at top level; `contents: read, pull-requests: read` on `autoqa` job; `pull-requests: read` on `validate-autoqa-format` job.
-
-2. unpinned-uses: Pinned all three actions to full commit SHAs — actions/checkout@11d5960a326750d5838078e36cf38b85af677262 (v4), AISquare-Studio/AISquare-Studio-QA@71db4eea23e14f684b5c91c2dbbc9d5145510b48 (main), actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 (v4).
-
-3. script-injection: Moved all ${{ }} expressions from run: shell blocks into env: blocks. In 'Get PR Body': EVENT_NAME, REPOSITORY, PR_NUMBER, PR_BODY_RAW env vars replace inline expressions. In 'Check AutoQA Format': PR_BODY env var replaces inline expression.
-
-4. github-env-injection: PR_BODY is now sanitized with `printf '%s' "$PR_BODY" | tr -d '\r'` before being written to GITHUB_OUTPUT, preventing newline injection attacks.
-
-### Iteration 3
-
-**Fixes applied:** github-env-injection
-
-**Notes:**
-
-Fixed the _set_outputs method in src/autoqa/action_runner.py to sanitize values before writing to $GITHUB_OUTPUT. The original code wrote attacker-controlled values (parsed from PR_BODY, which comes from github.event.pull_request.body) directly to GITHUB_OUTPUT without stripping newlines, allowing injection of arbitrary key=value pairs. The fix converts each value to a string, then strips all \r and \n characters before writing, preventing newline injection. The multiline heredoc path was also removed since all values are now sanitized to be single-line safe.
+Fixed all 6 unpinned `uses:` references by replacing mutable version tags with pinned 40-character SHA commit digests (preserving the tag in a comment for readability): actions/cache@v5 (×2) → SHA caa296126883cff596d87d8935842f9db880ef25, actions/checkout@v6 → SHA d23441a48e516b6c34aea4fa41551a30e30af803, actions/setup-python@v6 → SHA ece7cb06caefa5fff74198d8649806c4678c61a1, actions/upload-artifact@v7 (×2) → SHA cf430e030ddbb5b0abf93d22962f4752f3646cd9. Removed hardcoded credential defaults: dropped `default: 'test@example.com'` from staging-email and `default: 'password123'` from staging-password; both inputs remain optional (required: false) but no longer embed insecure credentials in the action definition.
 

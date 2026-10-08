@@ -13,84 +13,74 @@ on:
         required: true
         type: string
 
-permissions: {}
-
 jobs:
   autoqa:
     name: 🧪 Generate & Execute AutoQA Tests
     runs-on: ubuntu-latest
     # Only run if PR body contains "AutoQA" or manual trigger
     if: contains(github.event.pull_request.body, 'AutoQA') || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-      pull-requests: read
-
+    
     steps:
       - name: 📋 Checkout FE-REACT Repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
+      
       - name: 🔍 Get PR Body
         id: pr-body
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          EVENT_NAME: ${{ github.event_name }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.inputs.pr_number }}
-          PR_BODY_RAW: ${{ github.event.pull_request.body }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # For manual trigger, get PR body via API
-            PR_BODY=$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.body')
+            PR_BODY=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr_number }} --jq '.body')
           else
             # For automatic trigger, use event data
-            PR_BODY="$PR_BODY_RAW"
+            PR_BODY="${{ github.event.pull_request.body }}"
           fi
-
-          # Save PR body to output (sanitize newlines to prevent injection)
-          safe_content=$(printf '%s' "$PR_BODY" | tr -d '\r')
-          echo "content<<EOF" >> "$GITHUB_OUTPUT"
-          printf '%s\n' "$safe_content" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
+          
+          # Save PR body to output (escape newlines)
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: 🤖 Generate AutoQA Tests
-        uses: AISquare-Studio/AISquare-Studio-QA@71db4eea23e14f684b5c91c2dbbc9d5145510b48 # main
+        uses: AISquare-Studio/AISquare-Studio-QA@main
         with:
           # Required: OpenAI API key for test generation
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-
+          
           # GitHub token with access to AutoQA repository
           qa-github-token: ${{ secrets.QA_GITHUB_TOKEN }}
-
+          
           # Staging environment configuration
           staging-url: ${{ secrets.STAGING_URL }}
           staging-email: ${{ secrets.STAGING_EMAIL }}
           staging-password: ${{ secrets.STAGING_PASSWORD }}
-
+          
           # Repository and test configuration
           target-repo-path: '.'
           test-directory: 'tests/autoqa'
-
+          
           # Git configuration for commits
           git-user-name: 'AutoQA Bot'
           git-user-email: 'autoqa@aisquare.studio'
-
+          
           # PR body containing AutoQA test steps
           pr-body: ${{ steps.pr-body.outputs.content }}
-
+          
           # Optional: Run existing tests after generating new ones
           run-existing-tests: 'false'
-
+      
       # Note: The AutoQA action now includes screenshot uploads automatically
       # The action will post a comprehensive PR comment with embedded screenshots
       # and links to GitHub Actions artifacts
-
+      
       # Optional: Additional custom reporting or notifications can be added here
-      - name: 📤 Upload Additional Test Results (Optional)
+      - name: � Upload Additional Test Results (Optional)
         if: always() && steps.autoqa.outputs.test_generated == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           name: autoqa-custom-reports-${{ github.run_number }}
           path: |
@@ -104,16 +94,14 @@ jobs:
     name: 📋 Validate AutoQA Format
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.body, 'AutoQA')
-    permissions:
-      pull-requests: read
-
+    
     steps:
       - name: 🔍 Check AutoQA Format
-        env:
-          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
           echo "Checking AutoQA format in PR body..."
-
+          
           # Check if AutoQA tag exists
           if echo "$PR_BODY" | grep -q "AutoQA"; then
             echo "✅ AutoQA tag found"
@@ -121,16 +109,16 @@ jobs:
             echo "❌ AutoQA tag not found"
             exit 1
           fi
-
+          
           # Count numbered steps
           STEP_COUNT=$(echo "$PR_BODY" | grep -E '^[0-9]+\.' | wc -l)
           echo "Found $STEP_COUNT numbered test steps"
-
+          
           if [ $STEP_COUNT -ge 3 ]; then
             echo "✅ Sufficient test steps found ($STEP_COUNT)"
           else
             echo "❌ Need at least 3 test steps, found $STEP_COUNT"
             exit 1
           fi
-
+          
           echo "✅ AutoQA format validation passed"
