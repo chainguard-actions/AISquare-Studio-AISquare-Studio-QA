@@ -4,66 +4,180 @@
 
 > This file was generated automatically by the hardening agent.
 
-**Policy SHA:** `d636be7e43ef829af6e853da6b3c7566db9f72fe`
+**Policy SHA:** `374911c4be584df24e6da57af2d990570ef0f859`
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
 **Harden Agent Version:** `2`
 
-Action **AISquare-Studio--AISquare-Studio-QA/v0.2.0** was hardened automatically. 3 finding(s) were identified and resolved across 1 iteration(s).
+Action **AISquare-Studio--AISquare-Studio-QA/v0.2.0** was hardened automatically. 4 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
-### hardcoded-credentials (severity: high)
-
-The `staging-password` input has a hardcoded literal default value of `password123`. This is a real credential embedded in the action definition, not a secrets expression. Any workflow that uses this action without explicitly overriding `staging-password` will use this hardcoded password. The value matches the pattern `password: <alphanumeric-8+>` and is not a `${{ secrets.* }}` reference.
-
-Locations:
-
-- `action.yml:30`
-
 ### unpinned-uses (severity: high)
 
-All 7 `uses:` references in action.yml use mutable version tags instead of pinned 40-character SHA commit hashes, making the action vulnerable to supply-chain attacks if any of these upstream actions are compromised or their tags are moved. Failing references:
-- `uses: actions/cache@v5` (Cache AutoQA Repository step)
-- `uses: actions/checkout@v6` (Checkout AutoQA Action Repository step)
-- `uses: actions/setup-python@v6` (Setup Python Environment step)
-- `uses: actions/cache@v5` (Cache Playwright Browsers step)
-- `uses: actions/upload-artifact@v7` (Upload Screenshots step)
-- `uses: actions/upload-artifact@v7` (Upload Test Reports step)
-- `uses: actions/upload-artifact@v7` (Upload Dashboard Results step)
+The composite action steps use version tags instead of full 40-character commit SHAs: actions/cache@v5 (lines 164 and 189), actions/checkout@v6 (line 172), actions/setup-python@v6 (line 181), actions/upload-artifact@v7 (lines 268, 279 and 291).
 
 Locations:
 
-- `action.yml:155`
-- `action.yml:161`
-- `action.yml:169`
-- `action.yml:175`
-- `action.yml:220`
-- `action.yml:231`
-- `action.yml:242`
+- `action.yml:164`
+- `action.yml:172`
+- `action.yml:181`
+- `action.yml:189`
+- `action.yml:268`
+- `action.yml:279`
+- `action.yml:291`
 
 ### script-injection (severity: high)
 
-Sub-rule (a) violation: The '❌ Fail if tests failed' step's `run:` block directly interpolates `${{ steps.autoqa.outcome }}` inside shell `if` comparisons. Any `${{ ... }}` expression interpolated directly into a `run:` shell script is a script-injection risk because the value is substituted into the shell command string before the shell parses it. Offending lines:
-  `if [ "${{ steps.autoqa.outcome }}" = "skipped" ]; then`
-  `elif [ "${{ steps.autoqa.outcome }}" = "failure" ]; then`
-These should be replaced with an env-var reference, e.g. set `AUTOQA_OUTCOME: ${{ steps.autoqa.outcome }}` in an `env:` block and use `"$AUTOQA_OUTCOME"` in the shell script.
+Rule (a): the 'Fail if tests failed' step puts a GitHub Actions expression straight into its run: script: `if [ "${{ steps.autoqa.outcome }}" = "skipped" ]; then` and `elif [ "${{ steps.autoqa.outcome }}" = "failure" ]; then`. Pass it through an env: variable (e.g. AUTOQA_OUTCOME) and use "$AUTOQA_OUTCOME" in the script instead.
 
 Locations:
 
-- `action.yml:255`
-- `action.yml:257`
+- `action.yml:304`
+- `action.yml:306`
+
+### hardcoded-credentials (severity: high)
+
+The input 'staging-password' has the literal default value 'password123'. A password should not have a literal default. Remove it and require the caller to pass the value from a secret.
+
+Locations:
+
+- `action.yml:31`
+
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed action.yml without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/action.yml b/action.yml
+index b510649..58b84d1 100644
+--- a/action.yml
++++ b/action.yml
+@@ -1,192 +1,170 @@
+ name: 'AISquare Studio AutoQA'
+ description: 'AI-powered test generation with metadata-driven organization (flow_name, tier, area) using CrewAI + Playwright'
+ author: 'AISquare Studio'
+-
+ branding:
+   icon: 'zap'
+   color: 'blue'
+-
+ inputs:
+   openai-api-key:
+     description: 'OpenAI API key for test generation'
+     required: true
+-  
+   qa-github-token:
+     description: 'GitHub token with access to AutoQA repository (required for private repos)'
+     required: false
+     default: ${{ github.token }}
+-  
+   staging-url:
+     description: 'Staging environment URL for testing'
+     required: true
+-  
+   staging-email:
+     description: 'Test email for staging environment login'
+     required: false
+     default: 'test@example.com'
+-  
+   staging-password:
+     description: 'Test password for staging environment login'
+     required: false
+-    default: 'password123'
+-  
+   target-repo-path:
+     description: 'Path to the target repository (usually ".")'
+     required: false
+     default: '.'
+-  
+   git-user-name:
+     description: 'Git user name for commits'
+     required: false
+     default: 'AutoQA Bot'
+-  
+   git-user-email:
+     description: 'Git user email for commits'
+     required: false
+     default: 'rabia.tahirr@opengrowth.com'
+-  
+   pr-body:
+     description: 'Pull request description to parse for AutoQA metadata block (```autoqa\nflow_name: ...\ntier: ...\n```)'
+     required: false
+     default: ${{ github.event.pull_request.body }}
+-  
+   test-directory:
+     description: 'Base directory for generated tests (will create tests/autoqa/{tier}/{area}/test_{flow_name}.py structure)'
+     required: false
+     default: 'tests/autoqa'
+-  
+   create-pr:
+     description: 'Create a pull request instead of pushing directly to main branch'
+     required: false
+     default: 'false'
+-  
+   execution-mode:
+     description: 'Mode of operation: "generate" (new test only), "suite" (run all tests), "all" (generate + run all), "auto-criteria" (AI generates test criteria from PR diff for developer review), "gap-driven" (uses memory coverage gaps to generate test criteria for uncovered modules), or "gap-analysis" (scans for present/missing test workflows and persists results to a SQLite database)'
+     required: false
+     default: 'generate'
+-  
+   action-ref:
+     description: 'Git ref (branch, tag, or SHA) to checkout for the AutoQA action repository. Defaults to main when not provided.'
+     required: false
+     default: 'main'
+-
+   auto-criteria-fallback:
+     description: 'When true, if no autoqa block is found in the PR description, automatically generate test criteria from the PR diff (Proposal 16)'
+     required: false
+     default: 'false'
+-
+   auto-criteria-mode:
+     description: 'Auto-criteria mode: "suggest" (post for review) or "auto" (proceed if high confidence)'
+     required: false
+     default: 'suggest'
+-
+   auto-criteria-threshold:
+     description: 'Confidence score threshold (0-100) for auto-proceed mode'
+     required: false
+     default: '85'
+-
+   auto-criteria-approval:
+-    description: 'Approval mechanism: "reaction" (👍), "comment" (/autoqa approve), or "label" (autoqa:approved)'
++    description: "Approval mechanism: \"reaction\" (\U0001F44D), \"comment\" (/autoqa approve), or \"label\" (autoqa:approved)"
+     required: false
+     default: 'reaction'
+-
+   gap-analysis-scope:
+     description: 'Scope for gap-analysis mode: "auto" (detect from event), "pr" (PR changed files only), or "full" (entire repo)'
+     required: false
+     default: 'auto'
+-
+ outputs:
+   test_generated:
+     description: 'Whether a test was successfully generated'
+     value: ${{ steps.autoqa.outputs.test_generated }}
+-  
+   test_file_path:
+     description: 'Path to the generated test file (e.g., tests/autoqa/A/auth/test_user_login.py)'
+     value: ${{ steps.autoqa.outputs.test_file_path }}
+-  
+   test_results:
+     description: 'JSON string of test execution results'
+     value: ${{ steps.autoqa.outp
+... (truncated)
+```
+
+Locations:
+
+- `action.yml`
 
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** hardcoded-credentials, unpinned-uses, script-injection
+**Fixes applied:** unpinned-uses, script-injection, hardcoded-credentials, prior-fix
 
 **Notes:**
 
-1. hardcoded-credentials: Removed the hardcoded 'password123' default value from the staging-password input (line 30). The input is now optional with no default, requiring callers to explicitly provide a password via secrets.
-2. unpinned-uses: Pinned all 7 action references to full 40-character SHA hashes: actions/cache@v5 → caa296126883cff596d87d8935842f9db880ef25 (used twice), actions/checkout@v6 → d23441a48e516b6c34aea4fa41551a30e30af803, actions/setup-python@v6 → ece7cb06caefa5fff74198d8649806c4678c61a1, actions/upload-artifact@v7 → cf430e030ddbb5b0abf93d22962f4752f3646cd9 (used three times). Version tags preserved as comments.
-3. script-injection: Added an env block with AUTOQA_OUTCOME: ${{ steps.autoqa.outcome }} to the 'Fail if tests failed' step, and replaced both inline ${{ steps.autoqa.outcome }} interpolations in the shell script with $AUTOQA_OUTCOME references.
+In action.yml: pinned actions/cache@v5 (2 places), actions/checkout@v6, actions/setup-python@v6 and actions/upload-artifact@v7 (3 places) to full commit SHAs, with the tag kept in a trailing comment. In the 'Fail if tests failed' step, steps.autoqa.outcome now comes in through env (AUTOQA_OUTCOME) and the script reads "$AUTOQA_OUTCOME". Removed the 'password123' default from staging-password. Callers that relied on that default now pass an empty STAGING_PASSWORD unless they supply the value from a secret. These edits re-apply what the earlier harden did (prior-fix). That patch also changed whitespace and the emoji escaping, which made no security difference, so I left those alone. The checkout of the AutoQA repo still uses the action-ref input (default 'main'), as upstream does. It doesn't depend on github.action_ref, so I left it unchanged.
 
